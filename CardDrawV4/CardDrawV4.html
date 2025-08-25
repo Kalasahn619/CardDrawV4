@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>V3 Card Draw · Random Luck PWA</title>
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="description" content="Interactive probability explorer with card draws, suit remapping, 500-draw simulation, and PWA offline install." />
+  <!-- Inline manifest via data URL created at runtime for true single-file PWA -->
+  <link id="manifestLink" rel="manifest" href="#">
+  <style>
+    :root{
+      --bg-grad: linear-gradient(135deg,#0f172a 0%, #1e293b 40%, #0b3d91 100%);
+      --panel: rgba(255,255,255,0.08);
+      --panel-strong: rgba(255,255,255,0.14);
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #60a5fa;
+      --good: #34d399;
+      --bad: #f87171;
+      --warn: #fbbf24;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+      --card-w: 120px;
+      --card-h: 170px;
+      --gap: 14px;
+      --radius: 18px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; font-family: ui-sans-serif, system-ui, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      color:var(--text); background:var(--bg-grad); overflow-x:hidden;
+    }
+    header{
+      position:sticky; top:0; z-index:50; backdrop-filter: saturate(140%) blur(8px);
+      background: linear-gradient(180deg, rgba(15,23,42,.90), rgba(15,23,42,.55) 70%, transparent);
+      border-bottom:1px solid rgba(255,255,255,.08);
+    }
+    .wrap{max-width:1200px; margin:0 auto; padding:18px 18px;}
+    .title{
+      display:flex; align-items:center; gap:14px;
+    }
+    .logo{width:38px; height:38px; border-radius:12px; background: radial-gradient(circle at 30% 30%, #93c5fd, #2563eb 60%, #0ea5e9 100%); box-shadow: var(--shadow);
+      display:grid; place-items:center; font-weight:700; color:#0b1220;
+    }
+    h1{margin:0; font-size: clamp(20px, 3vw, 32px)}
+    .sub{color:var(--muted)}
+
+    .grid{
+      display:grid; gap:18px; grid-template-columns: 1.1fr 1fr; align-items:start;
+    }
+    @media (max-width: 980px){ .grid{grid-template-columns: 1fr} }
+
+    .panel{
+      background: var(--panel); border:1px solid rgba(255,255,255,.12); border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .panel h2{margin:0 0 8px; font-size: clamp(18px, 2.2vw, 22px)}
+    .pad{padding:16px}
+    .row{display:flex; gap:12px; flex-wrap:wrap; align-items:center}
+    .col{display:flex; flex-direction:column; gap:10px}
+    .controls .btn, .btn{ cursor:pointer; border:none; border-radius:14px; padding:10px 14px; font-weight:600; color:#0b1220;
+      background: linear-gradient(180deg, #c7d2fe, #93c5fd); box-shadow: var(--shadow); transition: transform .12s ease, filter .2s ease, box-shadow .2s ease; }
+    .btn:hover{ transform: translateY(-1px); filter:brightness(1.03)}
+    .btn:active{ transform: translateY(0)}
+    .btn.secondary{ background: linear-gradient(180deg, #d1fae5, #6ee7b7)}
+    .btn.warn{ background: linear-gradient(180deg, #fde68a, #f59e0b)}
+    .btn.ghost{ background: rgba(255,255,255,0.12); color:var(--text); border:1px solid rgba(255,255,255,.18)}
+    .btn.small{ padding:6px 10px; border-radius:10px; font-size:12px}
+
+    .cards{ display:flex; gap:var(--gap); flex-wrap:wrap; perspective:1200px; }
+    .card{
+      width:var(--card-w); height:var(--card-h); position:relative; transform-style:preserve-3d;
+      transition: transform .7s cubic-bezier(.2,.7,.2,1); border-radius:14px; cursor:pointer;
+    }
+    .card.is-flipped{ transform: rotateY(180deg)}
+    .card-face{
+      position:absolute; inset:0; backface-visibility:hidden; background:#fff; color:#111827; border-radius:14px;
+      border:1px solid #e5e7eb; display:flex; flex-direction:column; justify-content:space-between; padding:10px;
+    }
+    .card-face.back{ transform: rotateY(180deg) }
+    .idx{ font-weight:800; font-size:18px; display:flex; align-items:center; gap:6px}
+    .idx .suit{font-size:18px}
+    .big{ font-size:48px; text-align:center; line-height:1; margin-top:10px}
+    .codex{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight:700; text-align:right; color:#334155}
+    .heart,.diamond{ color:#ef4444 }
+    .spade,.club{ color:#111827 }
+
+    .stagger-enter{ opacity:0; transform: translateY(10px) scale(.98)}
+    .stagger-enter-active{ opacity:1; transform: translateY(0) scale(1); transition: all .5s ease }
+
+    .suit-order{ display:flex; gap:10px; align-items:center; flex-wrap:wrap }
+    .chip{ padding:8px 12px; border-radius:9999px; background: var(--panel-strong); border:1px solid rgba(255,255,255,.12);
+      display:flex; align-items:center; gap:8px; user-select:none }
+    .chip.active{ outline:2px solid var(--accent); box-shadow: 0 0 0 4px rgba(96,165,250,.2) }
+    .draggable{ cursor:grab }
+    .draggable:active{ cursor:grabbing }
+
+    .balls{ display:flex; gap:10px; flex-wrap:wrap; align-items:center }
+    .ball{ width:54px; height:54px; border-radius:50%; background: radial-gradient(circle at 30% 30%, #fff, #d1d5db);
+      color:#111827; display:grid; place-items:center; font-weight:800; box-shadow: var(--shadow); position:relative;}
+    .ball small{ position:absolute; bottom:-18px; font-size:10px; color:var(--muted)}
+    .ball.faded{ opacity:.35; filter: grayscale(80%)}
+
+    .cmp-grid{ display:grid; grid-template-columns: repeat(6, 1fr); gap:10px }
+    @media (max-width: 680px){ .cmp-grid{ grid-template-columns: repeat(3, 1fr) } }
+    .cmp{ background: rgba(255,255,255,.9); color:#111827; border-radius:10px; padding:8px; border:1px solid #e5e7eb }
+    .cmp .delta{ font-weight:800 }
+    .cmp .up{ color:#065f46 }
+    .cmp .down{ color:#991b1b }
+
+    .freq-cards{ display:grid; grid-template-columns: repeat(6, minmax(100px,1fr)); gap:12px }
+    @media (max-width: 980px){ .freq-cards{ grid-template-columns: repeat(3, minmax(100px,1fr)) } }
+    .pcard{ background:#fff; color:#111827; border:1px solid #e5e7eb; border-radius:14px; padding:10px; box-shadow: var(--shadow) }
+    .pcard .rank{ font-size:24px; font-weight:800 }
+    .pcard .meta{ font-size:12px; color:#334155 }
+    .bar{ height:6px; border-radius:6px; background:#e5e7eb; overflow:hidden; margin-top:6px }
+    .bar > i{ display:block; height:100%; width:0%; background: linear-gradient(90deg,#60a5fa,#34d399) }
+
+    .stats{ display:flex; gap:20px; flex-wrap:wrap }
+    .stat{
+      background: var(--panel-strong); border:1px solid rgba(255,255,255,.18); border-radius:14px; padding:10px 12px; min-width:160px
+    }
+
+    .progress{ height:10px; border-radius:12px; background: rgba(255,255,255,.15); overflow:hidden }
+    .progress>i{ display:block; height:100%; width:0%; background: linear-gradient(90deg,#22d3ee,#6366f1) }
+
+    footer{ margin:30px 0; color:var(--muted); text-align:center }
+    .hint{ color:var(--muted); font-size:12px }
+    .kbd{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight:700; background: rgba(255,255,255,.12); padding:2px 6px; border-radius:6px }
+    .pill{ padding:3px 8px; border-radius:999px; background: rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.18); font-size:12px }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <div class="title">
+        <div class="logo" aria-hidden="true">V3</div>
+        <div>
+          <h1>Card Draw · Random Luck</h1>
+          <div class="sub">Interactive probability explorer • 40-card deck • PWA offline installable</div>
+        </div>
+        <div style="margin-left:auto" class="row">
+          <button id="installBtn" class="btn ghost small" aria-label="Install app">Install</button>
+          <span id="offlineBadge" class="pill" hidden>Offline</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap" id="app" aria-live="polite">
+    <section class="grid">
+      <div class="panel pad controls" aria-label="Controls">
+        <h2>Controls</h2>
+        <div class="row">
+          <button id="drawBtn" class="btn" title="Draw 6 random cards and update results">Draw 6 Cards</button>
+          <button id="simulateBtn" class="btn secondary" title="Run 500 full draws with live updates">Run 500-Draw Simulation</button>
+          <button id="resetBtn" class="btn ghost" title="Reset current hand and panels">Reset</button>
+        </div>
+        <hr style="border-color:rgba(255,255,255,.12)"/>
+        <div class="col">
+          <strong>Suit Order</strong>
+          <div class="row">
+            <button class="btn small ghost" data-preset="classic" aria-pressed="true">Classic ♥ ♦ ♠ ♣</button>
+            <button class="btn small ghost" data-preset="reverse">Reverse ♣ ♠ ♦ ♥</button>
+            <button class="btn small ghost" data-preset="custom">Custom</button>
+          </div>
+          <div id="suitDnD" class="suit-order" aria-label="Drag to reorder suits" title="Drag to reorder suits; order changes codex values."></div>
+          <div class="row">
+            <input id="configName" class="btn small ghost" style="width:220px; text-align:left" placeholder="Save custom order name…" aria-label="Custom order name"/>
+            <button id="saveOrder" class="btn small" title="Save suit order to this device">Save Order</button>
+            <button id="loadOrder" class="btn small ghost" title="Load a previously saved suit order">Load Saved</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel pad" aria-label="Card Area">
+        <h2>Drawn Cards</h2>
+        <div id="cards" class="cards" aria-live="polite"></div>
+        <div class="hint">Tip: Click a card to flip. Front shows <b>original codex</b>; back shows <b>remapped codex</b> for current suit order.</div>
+      </div>
+    </section>
+
+    <section class="grid" style="margin-top:18px">
+      <div class="panel pad">
+        <h2>Digital Root Result</h2>
+        <div class="row" style="align-items:center; gap:20px">
+          <div id="rootBall" class="ball" style="width:90px; height:90px; font-size:28px">—</div>
+          <div>
+            <div id="rootExplain" class="hint">Sum → digital root (10 if divisible by 10)</div>
+            <div class="stats" style="margin-top:10px">
+              <div class="stat"><div class="muted">Codex Sum</div><div id="sumVal" style="font-weight:800; font-size:18px">—</div></div>
+              <div class="stat"><div class="muted">Current Order</div><div id="orderVal" style="font-weight:800; font-size:18px">—</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="panel pad">
+        <h2>Codex Comparison (Original → Remapped)</h2>
+        <div id="cmpGrid" class="cmp-grid" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <section id="simSection" class="panel pad" style="margin-top:18px" aria-label="Simulation Results">
+      <div class="row" style="justify-content:space-between; align-items:center">
+        <h2>500-Draw Simulation</h2>
+        <div style="min-width:220px">
+          <div class="progress" aria-label="Simulation progress"><i id="progressFill"></i></div>
+          <div id="progressText" class="hint">Idle</div>
+        </div>
+      </div>
+
+      <div class="stats" style="margin-top:10px">
+        <div class="stat"><div class="muted">Total Cards Drawn</div><div id="totalDrawn" style="font-weight:800; font-size:18px">0</div></div>
+        <div class="stat"><div class="muted">Expected/Card</div><div id="expectedPerCard" style="font-weight:800; font-size:18px">—</div></div>
+        <div class="stat"><div class="muted">Most Frequent #</div><div id="topNumbers" style="font-weight:800; font-size:18px">—</div></div>
+      </div>
+
+      <h3 style="margin-top:16px">Top 6 Most Frequent Cards</h3>
+      <div id="topCards" class="freq-cards"></div>
+
+      <h3 style="margin-top:16px">Random Numbers (Digital Root 1–10)</h3>
+      <div id="numBalls" class="balls"></div>
+    </section>
+
+    <section class="panel pad" style="margin-top:18px">
+      <h2>Export & Persistence</h2>
+      <div class="row">
+        <button id="exportCSV" class="btn small" title="Export simulation rows to CSV">Export CSV</button>
+        <button id="exportJSON" class="btn small" title="Export full simulation dataset to JSON">Export JSON</button>
+        <span class="hint">Exports include draw #, codex sum, digital root, suit order, timestamp, and hand.</span>
+      </div>
+    </section>
+
+    <footer>
+      <div>Built as a single-file <span class="kbd">PWA</span>. Drag suits to reorder • Click cards to flip • Run 500-draws to analyse frequencies.</div>
+    </footer>
+  </main>
+
+  <!-- Service Worker payload stored inline; registered via Blob to keep single-file packaging -->
+  <script id="sw-payload" type="application/json">{
+    "name": "inline-sw",
+    "code": "self.addEventListener('install', e=>{e.waitUntil(caches.open('v3-cache').then(c=>c.addAll(['./'])))});self.addEventListener('activate', e=>self.clients.claim());self.addEventListener('fetch', e=>{e.respondWith((async()=>{try{const r=await fetch(e.request);const c=await caches.open('v3-cache');c.put(e.request, r.clone());return r}catch(err){const m=await caches.match(e.request);return m||Response.error()}})())});"
+  }</script>
+
+  <script>
+  // ===== Core data =====
+  const SUITS = [
+    {key:'H', name:'Hearts', symbol:'\u2665', class:'heart'},
+    {key:'D', name:'Diamonds', symbol:'\u2666', class:'diamond'},
+    {key:'S', name:'Spades', symbol:'\u2660', class:'spade'},
+    {key:'C', name:'Clubs', symbol:'\u2663', class:'club'}
+  ];
+  const RANKS = [1,2,3,4,5,6,7,8,9,10];
+  const RANK_LABEL = r => (r===1? 'A': String(r));
+
+  // Original canonical order per spec: Hearts, Diamonds, Spades, Clubs
+  const ORIGINAL_ORDER = ['H','D','S','C'];
+
+  // State
+  let currentOrder = [...ORIGINAL_ORDER];
+  let currentHand = []; // cards: {suit:'H', rank:1, id:1..40}
+  let simulation = {
+    rows: [], // {n, timestamp, suitOrder, hand:[ids], sum, root}
+    countsByCard: Array(40).fill(0),
+    countsByRoot: Array(11).fill(0), // 0 unused; 1..10
+    totalDraws: 0
+  };
+  
+  // ===== Utilities =====
+  const el = sel => document.querySelector(sel);
+  const make = (tag, attrs={},{children=[]}={})=>{ const n=document.createElement(tag); for(const[k,v] of Object.entries(attrs)){
+      if(k==='class') n.className=v; else if(k==='html') n.innerHTML=v; else if(k==='text') n.textContent=v; else n.setAttribute(k,v);
+    } children.forEach(c=> n.appendChild(c)); return n; };
+
+  const codexFor = (suitKey, rank, orderArr) => {
+    const pos = orderArr.indexOf(suitKey); // 0..3
+    return pos*10 + rank; // matches spec
+  };
+  const originalCodex = (suitKey, rank) => codexFor(suitKey, rank, ORIGINAL_ORDER);
+  const remappedCodex = (suitKey, rank) => codexFor(suitKey, rank, currentOrder);
+
+  const digitalRoot10 = (sum) => {
+    if(sum % 10 === 0) return 10;
+    let s = sum;
+    while(s > 9){ s = s.toString().split('').reduce((a,b)=>a+ (+b), 0); }
+    return s;
+  };
+  const ts = () => new Date().toISOString();
+
+  function deck(){
+    const cards=[]; let id=1;
+    for(const s of ORIGINAL_ORDER){
+      for(const r of RANKS){ cards.push({id, suit:s, rank:r}); id++; }
+    }
+    return cards;
+  }
+
+  function shuffle(arr){
+    for(let i=arr.length-1;i>0;i--){ const j = Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; }
+    return arr;
+  }
+
+  function draw6(){
+    const d=deck(); shuffle(d); currentHand = d.slice(0,6);
+    renderHand(); updateCodexPanels(); computeRoot();
+  }
+
+  // ===== Rendering =====
+  function renderSuitDnD(){
+    const area = el('#suitDnD'); area.innerHTML='';
+    currentOrder.forEach((k, idx)=>{
+      const s = SUITS.find(x=>x.key===k);
+      const chip = make('div', {class:`chip draggable`, draggable:true, 'data-suit':k, title:`${s.name}. Drag to reorder.`});
+      chip.innerHTML = `<span class="${s.class}" style="font-size:18px">${s.symbol}</span> <b>${s.name}</b>`;
+      chip.addEventListener('dragstart', (e)=>{ e.dataTransfer.setData('text/plain', k); });
+      chip.addEventListener('dragover', (e)=>{ e.preventDefault(); chip.classList.add('active'); });
+      chip.addEventListener('dragleave', ()=> chip.classList.remove('active'));
+      chip.addEventListener('drop', (e)=>{
+        e.preventDefault(); chip.classList.remove('active');
+        const from = e.dataTransfer.getData('text/plain');
+        const to = k;
+        const a = currentOrder.indexOf(from); const b = currentOrder.indexOf(to);
+        const newOrder=[...currentOrder]; newOrder.splice(b,0,newOrder.splice(a,1)[0]);
+        currentOrder = newOrder; renderSuitDnD(); onOrderChanged();
+      });
+      area.appendChild(chip);
+    });
+    el('#orderVal').textContent = orderLabel(currentOrder);
+  }
+
+  function orderLabel(order){
+    const parts = order.map(k=>{ const s=SUITS.find(x=>x.key===k); return s.symbol; });
+    return parts.join(' ');
+  }
+
+  function renderHand(){
+    const area=el('#cards'); area.innerHTML='';
+    currentHand.forEach((c, i)=>{
+      const s = SUITS.find(x=>x.key===c.suit);
+      const front = make('div',{class:'card-face front','aria-label':`Card front ${s.name} ${RANK_LABEL(c.rank)}`});
+      front.innerHTML = `<div class="idx"><span class="suit ${s.class}">${s.symbol}</span><span>${RANK_LABEL(c.rank)}</span></div>
+        <div class="big ${s.class}">${s.symbol}</div>
+        <div class="codex" title="Original codex per Classic order">Original: ${originalCodex(c.suit,c.rank)}</div>`;
+      const back = make('div',{class:'card-face back','aria-label':`Card back mapped codex`});
+      back.innerHTML = `<div class="idx"><span class="suit ${s.class}">${s.symbol}</span><span>${RANK_LABEL(c.rank)}</span></div>
+        <div class="big ${s.class}">${s.symbol}</div>
+        <div class="codex" title="Remapped codex using current suit order">Mapped: ${remappedCodex(c.suit,c.rank)}</div>`;
+      const card = make('div',{class:'card stagger-enter',tabindex:0, role:'button', title:'Click to flip card'} ,{children:[front,back]});
+      setTimeout(()=> card.classList.add('stagger-enter-active'), 100 + i*100);
+      card.addEventListener('click', ()=> card.classList.toggle('is-flipped'));
+      card.addEventListener('keypress', (e)=>{ if(e.key==='Enter' || e.key===' '){ card.click(); e.preventDefault(); }});
+      area.appendChild(card);
+    });
+  }
+
+  function updateCodexPanels(){
+    // Comparison grid for the current hand
+    const grid = el('#cmpGrid'); grid.innerHTML='';
+    currentHand.forEach(c=>{
+      const o = originalCodex(c.suit,c.rank);
+      const m = remappedCodex(c.suit,c.rank);
+      const delta = m - o;
+      const cls = delta>0? 'up': (delta<0? 'down': '');
+      const s = SUITS.find(x=>x.key===c.suit);
+      const box = make('div',{class:'cmp', title:`${s.name} ${RANK_LABEL(c.rank)}: ${o} → ${m} (Δ ${delta})`});
+      box.innerHTML = `<div><b>${s.symbol} ${RANK_LABEL(c.rank)}</b></div>
+        <div>${o} → <span class="delta ${cls}">${m}</span> <span class="hint">(Δ ${delta>0?'+':''}${delta})</span></div>`;
+      grid.appendChild(box);
+    });
+  }
+
+  function computeRoot(){
+    if(currentHand.length===0){ el('#rootBall').textContent='—'; el('#sumVal').textContent='—'; return; }
+    const sum = currentHand.reduce((a,c)=> a + remappedCodex(c.suit,c.rank), 0);
+    const root = digitalRoot10(sum);
+    el('#rootBall').textContent = root; el('#sumVal').textContent = sum;
+    el('#rootExplain').textContent = `Digital root of ${sum} (10 if divisible by 10). Result: ${root}`;
+    el('#orderVal').textContent = orderLabel(currentOrder);
+  }
+
+  function onOrderChanged(){
+    // Visual feedback: flash the order chips
+    renderSuitDnD();
+    // Update backs and comparison
+    renderHand();
+    updateCodexPanels();
+    computeRoot();
+  }
+
+  // ===== Simulation =====
+  async function runSimulation(n=500){
+    // Reset previous simulation (but keep saved orders)
+    simulation.rows = []; simulation.countsByCard = Array(40).fill(0); simulation.countsByRoot = Array(11).fill(0); simulation.totalDraws=0;
+    const progFill = el('#progressFill'); const progText = el('#progressText');
+    const t0 = performance.now();
+    for(let i=1;i<=n;i++){
+      const hand = shuffle(deck()).slice(0,6);
+      const sum = hand.reduce((a,c)=> a + codexFor(c.suit,c.rank,currentOrder), 0);
+      const root = digitalRoot10(sum);
+      const row = { n:i, timestamp: ts(), suitOrder:[...currentOrder], hand: hand.map(h=>h.id), sum, root };
+      simulation.rows.push(row);
+      simulation.totalDraws++;
+      // counts
+      hand.forEach(h=> simulation.countsByCard[h.id-1]++ );
+      simulation.countsByRoot[root]++;
+      // UI updates in batches for smoothness
+      if(i % 10 === 0 || i===n){
+        const pct = Math.round(i/n*100);
+        progFill.style.width = pct + '%';
+        progText.textContent = `Running… ${i}/${n} (${pct}%)`;
+        await new Promise(r=> setTimeout(r, 8)); // tiny yield
+      }
+    }
+    const elapsed = Math.round(performance.now()-t0);
+    progText.textContent = `Complete in ${elapsed} ms`;
+    renderSimulationResults(n);
+    // Scroll into view
+    document.getElementById('simSection').scrollIntoView({behavior:'smooth'});
+  }
+
+  function renderSimulationResults(n){
+    const totalCards = n*6; el('#totalDrawn').textContent = totalCards.toLocaleString();
+    const expected = totalCards/40; el('#expectedPerCard').textContent = expected.toFixed(1);
+    // Top numbers
+    const nums = simulation.countsByRoot.slice(1); // 1..10
+    const max = Math.max(...nums);
+    const tops = nums.map((v,i)=>({num:i+1, v})).filter(x=>x.v===max).map(x=>x.num);
+    el('#topNumbers').textContent = tops.join(', ')+` (${max})`;
+
+    // Random numbers balls
+    const nb = el('#numBalls'); nb.innerHTML='';
+    nums.forEach((v,i)=>{
+      const ball = make('div',{class:'ball'+(v? '':' faded'), title:`Number ${i+1}: ${v} times (${(v/ n*100).toFixed(1)}%)`});
+      ball.textContent = i+1; const pct = v/n*100; const sm = make('small',{text: v? `${v} • ${(pct).toFixed(1)}%`:'0'});
+      ball.appendChild(sm); nb.appendChild(ball);
+    });
+
+    // Top 6 most frequent cards
+    const cards = deck();
+    const enriched = cards.map(c=> ({...c, count: simulation.countsByCard[c.id-1]}));
+    enriched.sort((a,b)=> b.count - a.count);
+    const top6 = enriched.slice(0,6);
+    const area = el('#topCards'); area.innerHTML='';
+    top6.forEach(c=>{
+      const s=SUITS.find(x=>x.key===c.suit); const exp = expected; const pct = c.count/ (n*6) * 100;
+      const card = make('div',{class:'pcard', title:`Expected ~${exp.toFixed(1)}, actual ${c.count}`});
+      card.innerHTML = `<div class="row" style="justify-content:space-between">
+        <div class="rank ${s.class}">${s.symbol} ${RANK_LABEL(c.rank)}</div>
+        <div class="meta">#${c.id}</div>
+      </div>
+      <div class="meta">Seen <b>${c.count}</b> times • ${(pct).toFixed(2)}%</div>
+      <div class="meta">vs expected <b>${exp.toFixed(1)}</b></div>
+      <div class="bar"><i style="width:${(c.count/ (n*6) * 1000)}%"></i></div>`; // scaled width for visibility
+      area.appendChild(card);
+    });
+  }
+
+  // ===== Exports =====
+  function exportCSV(){
+    if(!simulation.rows.length){ alert('Run the 500-draw simulation first.'); return; }
+    const header = ['draw','timestamp','suit_order','hand_ids','codex_sum','digital_root'];
+    const lines = [header.join(',')];
+    simulation.rows.forEach(r=>{
+      const so = r.suitOrder.join('');
+      lines.push([r.n, r.timestamp, so, '"'+r.hand.join('-')+'"', r.sum, r.root].join(','));
+    });
+    const blob = new Blob([lines.join('\n')], {type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    download(url, `v3-simulation-${Date.now()}.csv`);
+  }
+
+  function exportJSON(){
+    if(!simulation.rows.length){ alert('Run the 500-draw simulation first.'); return; }
+    const meta = { app:'V3 Card Draw', version:'1.0.0', timestamp: ts(), suitOrder: currentOrder, totalDraws: simulation.totalDraws };
+    const data = { meta, countsByCard: simulation.countsByCard, countsByRoot: simulation.countsByRoot, rows: simulation.rows };
+    const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    download(url, `v3-simulation-${Date.now()}.json`);
+  }
+  function download(url, filename){ const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); requestAnimationFrame(()=>{ URL.revokeObjectURL(url); a.remove(); }); }
+
+  // ===== Local storage for suit orders =====
+  const LS_KEY = 'v3-suit-orders';
+  function getSavedOrders(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)) || []; }catch(e){ return []; } }
+  function saveOrder(){
+    const name = el('#configName').value.trim() || `Order ${new Date().toLocaleString()}`;
+    const list = getSavedOrders();
+    list.push({ name, order: [...currentOrder], savedAt: ts() });
+    localStorage.setItem(LS_KEY, JSON.stringify(list));
+    alert('Saved: '+name);
+  }
+  function loadOrder(){
+    const list = getSavedOrders(); if(!list.length){ alert('No saved orders yet.'); return; }
+    const name = prompt('Type name to load (available):\n'+ list.map(x=>`• ${x.name} – ${x.order.join(' ')}`).join('\n'));
+    if(!name) return;
+    const found = list.find(x=>x.name.toLowerCase()===name.toLowerCase());
+    if(found){ currentOrder = [...found.order]; onOrderChanged(); }
+    else alert('Not found.');
+  }
+
+  // ===== PWA bits =====
+  let deferredPrompt = null;
+  function buildManifest(){
+    const manifest = {
+      name: "V3 Card Draw — Random Luck",
+      short_name: "V3 Card Draw",
+      start_url: ".",
+      display: "standalone",
+      background_color: "#0f172a",
+      theme_color: "#0f172a",
+      description: "Interactive probability explorer for a 40-card deck with suit remapping and 500-draw simulation.",
+      orientation: "any",
+      icons: [
+        { src: dataIcon('#2563eb','#0ea5e9'), sizes: "192x192", type: "image/png" },
+        { src: dataIcon('#60a5fa','#22d3ee'), sizes: "512x512", type: "image/png" }
+      ]
+    };
+    const url = 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(manifest));
+    document.getElementById('manifestLink').setAttribute('href', url);
+  }
+
+  function dataIcon(c1,c2){
+    // Generate simple PNG via SVG data URL -> Canvas -> PNG data URL for manifest
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='512' height='512'>
+      <defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='${c1}'/><stop offset='1' stop-color='${c2}'/></linearGradient></defs>
+      <rect width='100%' height='100%' rx='86' ry='86' fill='url(#g)'/>
+      <text x='50%' y='54%' text-anchor='middle' font-size='260' font-family='Arial' fill='white' font-weight='700'>V3</text>
+    </svg>`;
+    const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    return url;
+  }
+
+  async function registerSW(){
+    if(!('serviceWorker' in navigator)) return;
+    try{
+      const payload = document.getElementById('sw-payload').textContent;
+      const {code} = JSON.parse(payload);
+      const blob = new Blob([code], {type:'text/javascript'});
+      const url = URL.createObjectURL(blob);
+      await navigator.serviceWorker.register(url, {scope: './'});
+      setTimeout(()=> URL.revokeObjectURL(url), 2000);
+    }catch(e){ console.warn('SW register failed', e); }
+  }
+
+  window.addEventListener('beforeinstallprompt', (e)=>{ e.preventDefault(); deferredPrompt = e; el('#installBtn').hidden = false; });
+  el('#installBtn').addEventListener('click', async ()=>{
+    if(!deferredPrompt){ alert('Install not available yet. Try again later.'); return; }
+    deferredPrompt.prompt(); const { outcome } = await deferredPrompt.userChoice; deferredPrompt = null;
+    if(outcome==='accepted'){ el('#installBtn').textContent='Installed'; el('#installBtn').disabled=true; }
+  });
+
+  // Offline badge
+  function updateOffline(){ const off = !navigator.onLine; const b=el('#offlineBadge'); b.hidden = !off; }
+  window.addEventListener('online', updateOffline); window.addEventListener('offline', updateOffline);
+
+  // ===== Presets =====
+  function applyPreset(name){
+    const btns = document.querySelectorAll('[data-preset]'); btns.forEach(b=> b.setAttribute('aria-pressed','false'));
+    const btn = document.querySelector(`[data-preset="${name}"]`); if(btn) btn.setAttribute('aria-pressed','true');
+    if(name==='classic') currentOrder = [...ORIGINAL_ORDER];
+    else if(name==='reverse') currentOrder = ['C','S','D','H'];
+    else /*custom*/ currentOrder = [...currentOrder];
+    onOrderChanged();
+  }
+
+  // ===== Init =====
+  function init(){
+    buildManifest(); registerSW(); updateOffline();
+    renderSuitDnD(); draw6();
+    // Events
+    el('#drawBtn').addEventListener('click', draw6);
+    el('#simulateBtn').addEventListener('click', ()=> runSimulation(500));
+    el('#resetBtn').addEventListener('click', ()=>{ currentHand=[]; renderHand(); updateCodexPanels(); computeRoot(); });
+    document.querySelectorAll('[data-preset]').forEach(b=> b.addEventListener('click', ()=> applyPreset(b.dataset.preset)));
+    el('#saveOrder').addEventListener('click', saveOrder);
+    el('#loadOrder').addEventListener('click', loadOrder);
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
